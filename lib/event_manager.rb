@@ -1,8 +1,22 @@
 require 'csv'
 require 'google/apis/civicinfo_v2'
+require 'erb'
 
 def clean_zipcode(zipcode)
   zipcode.to_s.rjust(5, '0')[0..4]
+end
+
+def clean_phonenumber(n)
+    n = n.to_s
+    n = n.gsub('-','')
+    if n.length == 10
+        return n 
+    elsif n.length < 10 || n.length > 11 || n.length == 11 && n[0] != '1'
+        return 'Incorrect Phone Number'
+    elsif n.length == 11 && n[0] == '1'
+        n = n[1, 10]
+        return n 
+    end
 end
 
 def legislators_by_zipcode(zip)
@@ -12,18 +26,23 @@ def legislators_by_zipcode(zip)
     begin
         legislators = civic_info.representative_info_by_address(
             address: zip,
-            levels: 'country',
+            levels: 'country', 
             roles: ['legislatorUpperBody','legislatorLowerBody']
-        )
-        legislators = legislators.officials
-
-        legislator_names = legislators.map(&:name)
-
-        legislators_string = legislator_names.join(", ")
+        ).officials
 
     rescue
         "You can find your representatives by visiting www.commoncause.org/take-action/find-elected-officials"
     end
+end
+
+def save_thank_you_letter(id,form_letter)
+  Dir.mkdir('output') unless Dir.exist?('output')
+
+  filename = "output/thanks_#{id}.html"
+
+  File.open(filename, 'w') do |file|
+    file.puts form_letter
+  end
 end
 
 puts 'Events Manager Initialized!'
@@ -34,18 +53,21 @@ contents = CSV.open(
     header_converters: :symbol
 )
 
-template_letter = File.read('form_letter.html')
+template_letter = File.read('form_letter.erb')
+erb_template = ERB.new template_letter
 
 contents.each do |row|
+    id = row[0]
     name = row[:first_name] 
-
     zipcode = clean_zipcode(row[:zipcode])
-
     legislators = legislators_by_zipcode(zipcode)
+    phone_num = clean_phonenumber(row[:homephone])
+    form_letter = erb_template.result(binding)
+    time = row[:regdate]
+    hour = time[-5,5]
+    save_thank_you_letter(id,form_letter)
 
-    personal_letter = template_letter.gsub('FIRST_NAME', name)
-    personal_letter.gsub!('LEGISLATORS', legislators)
+    puts hour
 
-    puts personal_letter
 end
 
